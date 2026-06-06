@@ -70,7 +70,7 @@ Every layer also writes **Parquet files** to `data/lake/` in parallel — dual-w
 - Each `check_*` is a `ShortCircuitOperator` — skips downstream load if file is unchanged
 - Transform tasks use `TriggerRule.NONE_FAILED` — run even when ingestion was skipped
 - Final validation uses `TriggerRule.ALL_DONE` — always runs
-
+![DAG Structure](docs/img/real-airflow.png)
 ---
 
 ## Tables
