@@ -147,6 +147,16 @@ Results are stored in `analysis_revenue_by_color_year` and `analysis_avg_lead_ti
 
 ---
 
+## Power BI Dashboard
+
+A Power BI report was built on top of the `publish_product` and `publish_orders` tables, connecting directly to the `sales_assessment` PostgreSQL database.
+
+![Power BI Dashboard](docs/img/power_bi.png)
+
+The report covers both analysis questions visually and is available at [`docs/dashboard/`](docs/dashboard/).
+
+---
+
 ## Documentation
 
 Full process documentation is available in [`docs/`](docs/):
@@ -155,6 +165,7 @@ Full process documentation is available in [`docs/`](docs/):
 |---|---|
 | [`docs/data_model.md`](docs/data_model.md) | Type decision rules, column-by-column mapping for every table, FK relationships |
 | [`docs/decisions_and_analysis.md`](docs/decisions_and_analysis.md) | Step-by-step record of every schema decision and DQ finding, with the exact SQL queries used |
+| [`docs/dashboard/`](docs/dashboard/) | Power BI `.pbix` file connecting to `sales_assessment` |
 
 ---
 
