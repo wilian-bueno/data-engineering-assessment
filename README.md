@@ -49,25 +49,15 @@ Password: assessment_pass
 
 ## Architecture
 
+![Architecture](docs/img/arquitetura_macro.png)
+
+The full solution runs via **Docker Compose** — Apache Airflow orchestrates the pipeline, PySpark processes the data, and a dedicated **PostgreSQL** database (`sales_assessment`) stores all layers.
+
+The pipeline follows a **medallion architecture**: CSV files are ingested into a raw layer, typed and validated in a store layer, transformed into business-ready publish tables, and finally aggregated into analysis results.
+
 ![Architecture](docs/img/arquitetura.png)
 
-### Pipeline layers
-
-| Layer | Tables | Pattern |
-|---|---|---|
-| **Raw** | `raw_product_master`, `raw_sales_order_header`, `raw_sales_order_detail` | All TEXT, append-only, MD5 skip |
-| **Store** | `store_product_master`, `store_sales_order_header`, `store_sales_order_detail` | Typed, PKs, UPSERT |
-| **Publish** | `publish_product`, `publish_orders` | Business-ready, no `source_file_name` |
-| **Analysis** | `analysis_revenue_by_color_year`, `analysis_avg_lead_time_by_category` | Pure SQL, rebuilt each run |
-
-### Dual-write pattern
-
-Every layer (raw, store, publish) writes to both destinations simultaneously:
-
-| Destination | Format | Purpose |
-|---|---|---|
-| PostgreSQL `sales_assessment` | Relational tables | SQL-queryable, analysis-ready |
-| `data/lake/<layer>/` | Parquet (Snappy) | Columnar, portable, lakehouse-ready |
+Every layer also writes **Parquet files** to `data/lake/` in parallel — dual-write to both PostgreSQL and the lakehouse.
 
 ---
 
