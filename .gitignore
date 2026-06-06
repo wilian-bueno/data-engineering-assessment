@@ -1,0 +1,19 @@
+logs/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+.DS_Store
+
+# Generated lakehouse output (Parquet / Spark) — not source data, rebuilt by the pipeline.
+# Keep the empty folder placeholders (.gitkeep) so the directory structure stays in the repo.
+data/lake/**
+!data/lake/**/
+!data/lake/**/.gitkeep
+
+# Spark crc/success metadata
+*.crc
+_SUCCESS
+
+# Temp / scratch scripts
+_count_dates.ps1

@@ -1,0 +1,4 @@
+pyspark==3.5.1
+pyarrow==16.1.0
+psycopg2-binary==2.9.9
+apache-airflow-providers-postgres==5.10.2

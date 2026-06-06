@@ -1,0 +1,133 @@
+version: "3.9"
+
+x-airflow-common: &airflow-common
+  build: .
+  environment:
+    # ── Airflow core ──────────────────────────────────────────────────
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow:5432/airflow
+    AIRFLOW__WEBSERVER__SECRET_KEY: "assessment_secret_key"
+    # ── Assessment database ───────────────────────────────────────────
+    ASSESSMENT_DB_CONN: postgresql+psycopg2://assessment_user:assessment_pass@postgres_assessment:5432/sales_assessment
+    ASSESSMENT_DB_HOST: postgres_assessment
+    ASSESSMENT_DB_PORT: "5432"
+    ASSESSMENT_DB_NAME: sales_assessment
+    ASSESSMENT_DB_USER: assessment_user
+    ASSESSMENT_DB_PASSWORD: assessment_pass
+    # JDBC URL used by PySpark to write directly to PostgreSQL
+    ASSESSMENT_DB_JDBC_URL: jdbc:postgresql://postgres_assessment:5432/sales_assessment
+    # ── PySpark (local mode) ──────────────────────────────────────────
+    JAVA_HOME: /usr/lib/jvm/default-java
+    PYSPARK_PYTHON: python3
+    SPARK_LOCAL_DIRS: /tmp/spark
+    POSTGRES_JDBC_JAR: /opt/postgresql-jdbc.jar
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./sql:/opt/airflow/sql
+    - ./data/input:/opt/airflow/data/input      # source CSV files
+    - ./data/lake:/opt/airflow/data/lake        # Parquet lakehouse output
+    - ./include:/opt/airflow/include
+    - ./logs:/opt/airflow/logs
+  depends_on:
+    postgres_airflow:
+      condition: service_healthy
+    postgres_assessment:
+      condition: service_healthy
+
+services:
+
+  # ─────────────────────────────────────────────
+  # Assessment database (raw_, store_, publish_)
+  # ─────────────────────────────────────────────
+  postgres_assessment:
+    image: postgres:16
+    container_name: postgres_assessment
+    environment:
+      POSTGRES_DB: sales_assessment
+      POSTGRES_USER: assessment_user
+      POSTGRES_PASSWORD: assessment_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - assessment_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "assessment_user", "-d", "sales_assessment"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Airflow metadata database
+  # ─────────────────────────────────────────────
+  postgres_airflow:
+    image: postgres:16
+    container_name: postgres_airflow
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow", "-d", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Airflow init — runs once, then exits
+  # ─────────────────────────────────────────────
+  airflow_init:
+    <<: *airflow-common
+    container_name: airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username airflow \
+          --password airflow \
+          --firstname Air \
+          --lastname Flow \
+          --role Admin \
+          --email airflow@example.com
+    restart: "no"
+
+  # ─────────────────────────────────────────────
+  # Airflow webserver  →  http://localhost:8080
+  # ─────────────────────────────────────────────
+  airflow_webserver:
+    <<: *airflow-common
+    container_name: airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow_init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Airflow scheduler
+  # ─────────────────────────────────────────────
+  airflow_scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler
+    command: scheduler
+    depends_on:
+      airflow_init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  assessment_db_data:
+  airflow_db_data:
