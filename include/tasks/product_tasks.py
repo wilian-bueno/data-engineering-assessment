@@ -152,7 +152,12 @@ def load_publish_product() -> None:
         when(col("color").isNull(), lit("N/A")).otherwise(col("color"))
     )
 
-    # Step 2: product_category_name enrichment
+    # Step 2: product_category_name enrichment based on assessment specification.
+    # Decision: sub-categories not listed in the spec (e.g. 'Jerseys') are left
+    # with NULL category — no assumption was made without business validation.
+    # Open question for business team: should 'Jerseys' map to 'Clothing'?
+    # Also worth discussing: should similar sub-categories be merged into fewer
+    # groups, or kept granular? Would need product/business team input to decide.
     df = df.withColumn(
         "product_category_name",
         when(col("product_category_name").isNotNull(), col("product_category_name"))

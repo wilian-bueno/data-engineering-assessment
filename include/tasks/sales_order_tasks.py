@@ -200,13 +200,23 @@ def load_publish_orders() -> None:
 
     @udf(returnType=IntegerType())
     def business_days_between(start_date, end_date):
+        """
+        Counts business days (Mon–Fri) between order_date and ship_date.
+
+        Boundary decision:
+          - start_date (order_date) is EXCLUSIVE — the order day itself is not a lead day.
+          - end_date   (ship_date)  is INCLUSIVE — the shipping day is the last lead day.
+          Example: ordered Mon, shipped Wed → 2 business days (Tue + Wed).
+
+        Weekends: Saturday (weekday=5) and Sunday (weekday=6) are skipped.
+        """
         if start_date is None or end_date is None:
             return None
         count = 0
         current = start_date
         while current < end_date:
             current += timedelta(days=1)
-            if current.weekday() < 5:
+            if current.weekday() < 5:  # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri
                 count += 1
         return count
 

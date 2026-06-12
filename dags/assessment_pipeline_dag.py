@@ -254,9 +254,14 @@ with DAG(
     # Products: fully independent chain
     init_metadata >> ingest_products >> transform_products
 
-    # Orders: header and detail run in parallel, converge at publish_orders
+    # Orders: ingests run in parallel, but store transforms are sequential.
+    # transform_detail has two physical FK dependencies:
+    #   · sales_order_id → store_sales_order_header  (transform_header must finish first)
+    #   · product_id     → store_product_master       (transform_products must finish first)
+    # Both parent tables must be populated before detail rows can be inserted.
     init_metadata >> ingest_header >> transform_header
-    init_metadata >> ingest_detail >> transform_detail
+    init_metadata >> ingest_detail
+    [transform_header, transform_products, ingest_detail] >> transform_detail
     [transform_header, transform_detail] >> publish_orders
 
     # Analysis runs after both publish tables are ready (parallel Q1 + Q2)

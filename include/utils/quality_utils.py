@@ -7,157 +7,76 @@ from include.utils.db_utils import get_assessment_connection
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DQ check — store_sales_order_header
+# Generic DQ framework
 # ─────────────────────────────────────────────────────────────────────────────
 
-def dq_check_store_sales_order_header() -> None:
+def run_dq_checks(table: str, pk_col: str) -> None:
+    """
+    Standard DQ checks for any store table:
+      1. No duplicate values in pk_col
+      2. No NULL values in pk_col
+      3. Table is not empty
+    Raises ValueError if any check fails.
+    """
     conn = get_assessment_connection()
     errors = []
-    row_count = 0
 
     try:
         with conn.cursor() as cur:
 
-            cur.execute("""
+            cur.execute(f"""
                 SELECT COUNT(*) FROM (
-                    SELECT sales_order_id FROM store_sales_order_header
-                    GROUP BY sales_order_id HAVING COUNT(*) > 1
+                    SELECT {pk_col} FROM {table}
+                    GROUP BY {pk_col} HAVING COUNT(*) > 1
                 ) dups
             """)
             dups = cur.fetchone()[0]
             if dups > 0:
-                errors.append(f"  [FAIL] Duplicate sales_order_id: {dups}")
+                errors.append(f"[FAIL] {dups} duplicate {pk_col}")
             else:
-                logging.info("  [PASS] No duplicate sales_order_id")
+                logging.info(f"  [PASS] No duplicate {pk_col}")
 
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_header WHERE sales_order_id IS NULL")
-            null_pk = cur.fetchone()[0]
-            if null_pk > 0:
-                errors.append(f"  [FAIL] NULL sales_order_id: {null_pk} rows")
+            cur.execute(f"SELECT COUNT(*) FROM {table} WHERE {pk_col} IS NULL")
+            nulls = cur.fetchone()[0]
+            if nulls > 0:
+                errors.append(f"[FAIL] {nulls} NULL {pk_col}")
             else:
-                logging.info("  [PASS] No NULL sales_order_id")
+                logging.info(f"  [PASS] No NULL {pk_col}")
 
-            cur.execute("""
-                SELECT COUNT(*) FROM store_sales_order_header
-                WHERE order_date IS NULL OR ship_date IS NULL
-            """)
-            null_dates = cur.fetchone()[0]
-            if null_dates > 0:
-                errors.append(f"  [FAIL] NULL dates: {null_dates} rows")
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
+            rows = cur.fetchone()[0]
+            if rows == 0:
+                errors.append(f"[FAIL] {table} is empty")
             else:
-                logging.info("  [PASS] No NULL dates")
-
-            cur.execute("""
-                SELECT COUNT(*) FROM store_sales_order_header
-                WHERE ship_date <= order_date
-            """)
-            bad_dates = cur.fetchone()[0]
-            if bad_dates > 0:
-                errors.append(f"  [FAIL] ship_date <= order_date: {bad_dates} rows")
-            else:
-                logging.info("  [PASS] All ship dates after order dates")
-
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_header WHERE freight < 0")
-            neg_freight = cur.fetchone()[0]
-            if neg_freight > 0:
-                errors.append(f"  [FAIL] Negative freight: {neg_freight} rows")
-            else:
-                logging.info("  [PASS] No negative freight")
-
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_header")
-            row_count = cur.fetchone()[0]
-            if row_count == 0:
-                errors.append("  [FAIL] store_sales_order_header is empty")
-            else:
-                logging.info(f"  [PASS] Row count: {row_count}")
+                logging.info(f"  [PASS] Row count: {rows}")
 
     finally:
         conn.close()
 
     if errors:
-        raise ValueError(
-            f"DQ FAILED for store_sales_order_header ({len(errors)} issue(s)):\n"
-            + "\n".join(errors)
-        )
-    logging.info(f"All DQ checks passed for store_sales_order_header. {row_count} rows.")
+        raise ValueError(f"DQ failed for {table}:\n" + "\n".join(errors))
+    logging.info(f"DQ passed for {table}.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DQ check — store_sales_order_detail
+# Table-specific DQ callables (called by the DAG)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def dq_check_store_product_master() -> None:
+    run_dq_checks("store_product_master", "product_id")
+
+
+def dq_check_store_sales_order_header() -> None:
+    run_dq_checks("store_sales_order_header", "sales_order_id")
+
 
 def dq_check_store_sales_order_detail() -> None:
-    conn = get_assessment_connection()
-    errors = []
-    row_count = 0
+    run_dq_checks("store_sales_order_detail", "sales_order_detail_id")
 
-    try:
-        with conn.cursor() as cur:
 
-            cur.execute("""
-                SELECT COUNT(*) FROM (
-                    SELECT sales_order_detail_id FROM store_sales_order_detail
-                    GROUP BY sales_order_detail_id HAVING COUNT(*) > 1
-                ) d
-            """)
-            dups = cur.fetchone()[0]
-            if dups > 0:
-                errors.append(f"  [FAIL] Duplicate sales_order_detail_id: {dups}")
-            else:
-                logging.info("  [PASS] No duplicate sales_order_detail_id")
-
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_detail WHERE sales_order_detail_id IS NULL")
-            null_pk = cur.fetchone()[0]
-            if null_pk > 0:
-                errors.append(f"  [FAIL] NULL sales_order_detail_id: {null_pk} rows")
-            else:
-                logging.info("  [PASS] No NULL sales_order_detail_id")
-
-            cur.execute("""
-                SELECT COUNT(*) FROM store_sales_order_detail d
-                LEFT JOIN store_sales_order_header h USING (sales_order_id)
-                WHERE h.sales_order_id IS NULL
-            """)
-            orphans = cur.fetchone()[0]
-            if orphans > 0:
-                errors.append(f"  [FAIL] Orphan detail rows: {orphans}")
-            else:
-                logging.info("  [PASS] No orphan records")
-
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_detail WHERE order_qty < 0")
-            neg_qty = cur.fetchone()[0]
-            if neg_qty > 0:
-                logging.warning(
-                    f"  [WARN] order_qty < 0: {neg_qty} rows — return/reversal entries "
-                    f"(detail IDs 112 and 339, qty=-1). Expected behaviour."
-                )
-            else:
-                logging.info("  [PASS] No negative order quantities")
-
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_detail WHERE unit_price < 0")
-            neg_price = cur.fetchone()[0]
-            if neg_price > 0:
-                errors.append(f"  [FAIL] Negative unit_price: {neg_price} rows")
-            else:
-                logging.info("  [PASS] No negative unit prices")
-
-            cur.execute("SELECT COUNT(*) FROM store_sales_order_detail")
-            row_count = cur.fetchone()[0]
-            if row_count == 0:
-                errors.append("  [FAIL] store_sales_order_detail is empty")
-            else:
-                logging.info(f"  [PASS] Row count: {row_count}")
-
-    finally:
-        conn.close()
-
-    if errors:
-        raise ValueError(
-            f"DQ FAILED for store_sales_order_detail ({len(errors)} issue(s)):\n"
-            + "\n".join(errors)
-        )
-    logging.info(f"All DQ checks passed for store_sales_order_detail. {row_count} rows.")
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Deduplication
+# ─────────────────────────────────────────────────────────────────────────────
 
 def deduplicate_by_completeness(df, pk_col: str):
     """
@@ -187,63 +106,3 @@ def deduplicate_by_completeness(df, pk_col: str):
         logging.info(f"[dedup] pk='{pk_col}': no duplicates found")
 
     return df_clean
-
-
-def dq_check_store_product_master() -> None:
-    """
-    Validates store_product_master before writing publish_product.
-    Raises ValueError on any failure — stops the pipeline before publish is written.
-    """
-    conn   = get_assessment_connection()
-    errors = []
-    rows   = 0
-
-    try:
-        with conn.cursor() as cur:
-
-            cur.execute("""
-                SELECT COUNT(*) FROM (
-                    SELECT product_id FROM store_product_master
-                    GROUP BY product_id HAVING COUNT(*) > 1
-                ) dups
-            """)
-            dups = cur.fetchone()[0]
-            if dups > 0:
-                errors.append(f"  [FAIL] {dups} duplicate product_id(s)")
-            else:
-                logging.info("  [PASS] No duplicate product_id")
-
-            cur.execute("SELECT COUNT(*) FROM store_product_master WHERE product_id IS NULL")
-            nulls = cur.fetchone()[0]
-            if nulls > 0:
-                errors.append(f"  [FAIL] {nulls} NULL product_id(s)")
-            else:
-                logging.info("  [PASS] No NULL product_id")
-
-            cur.execute("""
-                SELECT COUNT(*) FROM store_product_master
-                WHERE standard_cost < 0 OR list_price < 0
-            """)
-            neg = cur.fetchone()[0]
-            if neg > 0:
-                errors.append(f"  [FAIL] {neg} row(s) with negative cost or price")
-            else:
-                logging.info("  [PASS] No negative cost or price")
-
-            cur.execute("SELECT COUNT(*) FROM store_product_master")
-            rows = cur.fetchone()[0]
-            if rows == 0:
-                errors.append("  [FAIL] store_product_master is empty")
-            else:
-                logging.info(f"  [PASS] Row count: {rows}")
-
-    finally:
-        conn.close()
-
-    if errors:
-        raise ValueError(
-            f"DQ failed for store_product_master ({len(errors)} issue(s)):\n"
-            + "\n".join(errors)
-        )
-
-    logging.info(f"All DQ checks passed for store_product_master. {rows} rows.")

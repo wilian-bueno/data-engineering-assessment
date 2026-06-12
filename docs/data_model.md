@@ -106,15 +106,25 @@ Source: `raw_sales_order_detail`
 
 | Raw column           | Store column            | Type            | Nullable | Rule applied                           |
 | -------------------- | ----------------------- | --------------- | -------- | -------------------------------------- |
-| `SalesOrderDetailID` | `sales_order_detail_id` | `INTEGER`       | NO       | ID rule → PK; all values fit in 32-bit |
-| `SalesOrderID`       | `sales_order_id`        | `INTEGER`       | NO       | ID rule — FK to store header           |
-| `OrderQty`           | `order_qty`             | `INTEGER`       | YES      | small quantities, safe as 32-bit       |
-| `ProductID`          | `product_id`            | `INTEGER`       | YES      | ID rule — FK to store_product_master   |
-| `UnitPrice`          | `unit_price`            | `DECIMAL(18,6)` | YES      | Price rule                             |
-| `UnitPriceDiscount`  | `unit_price_discount`   | `DECIMAL(18,6)` | YES      | Price rule                             |
+| `SalesOrderDetailID` | `sales_order_detail_id` | `INTEGER`       | NO       | ID rule → PK; all values fit in 32-bit        |
+| `SalesOrderID`       | `sales_order_id`        | `INTEGER`       | NO       | ID rule → **physical FK** to store header     |
+| `OrderQty`           | `order_qty`             | `INTEGER`       | YES      | small quantities, safe as 32-bit              |
+| `ProductID`          | `product_id`            | `INTEGER`       | YES      | ID rule → **physical FK** to store_product_master |
+| `UnitPrice`          | `unit_price`            | `DECIMAL(18,6)` | YES      | Price rule                                    |
+| `UnitPriceDiscount`  | `unit_price_discount`   | `DECIMAL(18,6)` | YES      | Price rule                                    |
 
 
 **Primary key:** `sales_order_detail_id`
+
+**Foreign keys (enforced in database):**
+
+| Column | References | Enforced |
+| -------------- | ------------------------------- | -------- |
+| `sales_order_id` | `store_sales_order_header (sales_order_id)` | ✅ physical FK |
+| `product_id` | `store_product_master (product_id)` | ✅ physical FK |
+
+Both FKs are declared inline in `CREATE TABLE`. The DAG guarantees both parent tables
+are fully populated before `store_sales_order_detail` is loaded (sequential task dependency).
 
 **Note on negative order_qty:**
 2 rows were found with `order_qty = -1`:

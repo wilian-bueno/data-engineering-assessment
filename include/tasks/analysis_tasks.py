@@ -48,7 +48,7 @@ def run_avg_lead_time_analysis() -> None:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT product_category_name, avg_lead_time_business_days, total_order_lines
+                SELECT product_category_name, avg_lead_time_business_days
                 FROM analysis_avg_lead_time_by_category
                 ORDER BY avg_lead_time_business_days
             """)
