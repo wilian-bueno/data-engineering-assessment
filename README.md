@@ -63,13 +63,12 @@ Every layer also writes **Parquet files** to `data/lake/` in parallel — dual-w
 
 ## DAG structure
 
-![DAG Structure](docs/img/airflow.png)
-
-- Products chain is fully independent
-- Sales order header and detail run in parallel, converge at `publish_orders`
+- All three ingestions run in parallel
+- `transform_detail` waits for **both** `transform_header` and `transform_products` — required by the two physical FKs declared on `store_sales_order_detail`
 - Each `check_*` is a `ShortCircuitOperator` — skips downstream load if file is unchanged
 - Transform tasks use `TriggerRule.NONE_FAILED` — run even when ingestion was skipped
 - Final validation uses `TriggerRule.ALL_DONE` — always runs
+
 ![DAG Structure](docs/img/real-airflow.png)
 ---
 
@@ -110,7 +109,15 @@ Every layer also writes **Parquet files** to `data/lake/` in parallel — dual-w
 - `Weight` → `FLOAT` (nullable)
 
 ### Foreign keys
-FK constraints are intentionally **not enforced at the database level**. Header and detail pipelines run in parallel — a physical FK would cause race conditions on INSERT. Referential integrity is validated by DQ checks after load (logical FK pattern, standard in data lake architectures).
+Two FKs are enforced **physically** in `store_sales_order_detail`:
+- `sales_order_id` → `store_sales_order_header` — detail row cannot exist without a matching header
+- `product_id` → `store_product_master` — detail row cannot reference an unknown product
+
+Both are declared inline in `CREATE TABLE`. The DAG makes `transform_detail` wait for both parent tables to be fully loaded before any detail row is inserted.
+
+Two FKs remain **documented only** because the referenced tables are outside this dataset:
+- `customer_id` → customer dimension (absent)
+- `sales_person_id` → salesperson dimension (absent)
 
 ### OrderDate assumption
 Only **5 rows (of 31,465)** store `OrderDate` as `"YYYY-MM"` (no day); the rest are full dates.
@@ -192,9 +199,10 @@ Full process documentation is available in [`docs/`](docs/):
 │       └── quality_utils.py            # DQ checks + deduplicate_by_completeness()
 ├── sql/
 │   ├── raw/                            # CREATE TABLE raw_* (reference + raw_file_metadata)
-│   ├── store/                          # CREATE TABLE IF NOT EXISTS store_*
+│   ├── store/                          # CREATE TABLE IF NOT EXISTS store_* (with FK constraints)
 │   ├── publish/                        # CREATE TABLE IF NOT EXISTS publish_*
-│   └── analysis/                       # DROP + CREATE TABLE AS SELECT (Q1 + Q2)
+│   ├── analysis/                       # CREATE TABLE AS SELECT (Q1 + Q2) + SELECT result files
+│   └── validation/                     # One .sql file per validation check (orphans, DQ, business rules)
 ├── docs/                               # Full process documentation
 ├── docker-compose.yml
 ├── Dockerfile
